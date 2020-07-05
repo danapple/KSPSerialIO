@@ -251,6 +251,8 @@ namespace KSPSerialIO
         public static string PortNumber;
         public static Boolean DisplayFound = false;
         public static Boolean ControlReceived = false;
+	public static int sendCount = 0;
+	public static int rcvCount = 0;
 
         public static VesselData VData;
         public static ControlPacket CPacket;
@@ -285,11 +287,13 @@ namespace KSPSerialIO
 
         public static void InboundPacketHandler()
         {
+//            Debug.Log("KSPSerialIO: InboundPacketHandler start");
             SerialMutex.WaitOne();
             NewPacketFlag = false;
             switch (NewPacketBuffer[0])
             {
                 case HSPid:
+//                    Debug.Log("KSPSerialIO: HSPid");
                     HPacket = (HandShakePacket)ByteArrayToStructure(NewPacketBuffer, HPacket);
                     SerialMutex.ReleaseMutex();
                     HandShake();
@@ -307,14 +311,17 @@ namespace KSPSerialIO
                     break;
                 default:
                     SerialMutex.ReleaseMutex();
-                    Debug.Log("KSPSerialIO: Packet id unimplementd");
+//                    Debug.Log("KSPSerialIO: Packet id unimplemented");
                     break;
             }
+//            Debug.Log("KSPSerialIO: InboundPacketHandler done");
 
         }
 
         public static void sendPacket(object anything)
         {
+//            Debug.Log("KSPSerialIO: sendPacket start " + ++sendCount);
+
             byte[] Payload = StructureToByteArray(anything);
             byte header1 = 0xBE;
             byte header2 = 0xEF;
@@ -338,7 +345,9 @@ namespace KSPSerialIO
             Packet[2] = size;
             Packet[Packet.Length - 1] = checksum;
 
+//            Debug.Log("KSPSerialIO: about to write " + (byte)Packet.Length + " bytes");
             Port.Write(Packet, 0, Packet.Length);
+//            Debug.Log("KSPSerialIO: sendPacket done " + sendCount);
         }
 
         private void Begin()
@@ -361,10 +370,12 @@ namespace KSPSerialIO
         {
             byte[] buffer = new byte[MaxPayloadSize + 4];
             Action SerialRead = null;
-            Debug.Log("KSPSerialIO: Serial Worker thread started");
+            Debug.Log("KSPSerialIO: Serial Worker thread started FOO!");
             SerialRead = delegate {
+//		Debug.Log("KSPSerialIO: trying to read");
                 try
                 {
+//		    Debug.Log("KSPSerialIO: trying to read in try");
                     Port.BaseStream.BeginRead(buffer, 0, buffer.Length, delegate (IAsyncResult ar) {
                             try
                             {
@@ -375,21 +386,26 @@ namespace KSPSerialIO
                             }
                             catch (IOException exc)
                             {
-                                Debug.Log("IOException in SerialWorker :(");
+                                Debug.Log("KSPSerialIO: IOException in SerialWorker :(");
                                 Debug.Log(exc.ToString());
                             }
                         }, null);
+//	            Debug.Log("KSPSerialIO: Got data");
                 }
                 catch (InvalidOperationException)
                 {
                     Debug.Log("KSPSerialIO: Trying to read port that isn't open. Sleeping");
                     Thread.Sleep(500);
                 }
+//		Debug.Log("KSPSerialIO: Read done");
+                
             };
+//            Debug.Log("KSPSerialIO: Starting reader");
 
             doSerialRead = true;
             while (doSerialRead)
             {
+//	        Debug.Log("KSPSerialIO: Calling SerialRead()");
                 SerialRead();
             }
             Debug.Log("KSPSerialIO: Serial worker thread shutting down.");
@@ -397,6 +413,7 @@ namespace KSPSerialIO
 
         private void ReceivedDataEvent(byte[] ReadBuffer, int BufferLength)
         {
+//            Debug.Log("KSPSerialIO: ReceivedDataEvent start with " + BufferLength + " bytes");
             for (int x=0; x<BufferLength; x++)
             {
                 switch(CurrentState)
@@ -404,15 +421,18 @@ namespace KSPSerialIO
                     case ReceiveStates.FIRSTHEADER:
                         if (ReadBuffer[x] == 0xBE)
                         {
+//		            Debug.Log("KSPSerialIO: received first header");
                             CurrentState = ReceiveStates.SECONDHEADER;
                         }
                         break;
                     case ReceiveStates.SECONDHEADER:
                         if (ReadBuffer[x] == 0xEF)
                         {
+//		            Debug.Log("KSPSerialIO: received second header");
                             CurrentState = ReceiveStates.SIZE;
                         } else
                         {
+//		            Debug.Log("KSPSerialIO: did not");
                             CurrentState = ReceiveStates.FIRSTHEADER;
                         }
                         break;
@@ -420,18 +440,21 @@ namespace KSPSerialIO
                         CurrentPacketLength = ReadBuffer[x];
                         CurrentBytesRead = 0;
                         CurrentState = ReceiveStates.PAYLOAD;
+//		        Debug.Log("KSPSerialIO: received size " + CurrentPacketLength);
                         break;
                     case ReceiveStates.PAYLOAD:
                         PayloadBuffer[CurrentBytesRead] = ReadBuffer[x];
                         CurrentBytesRead++;
                         if (CurrentBytesRead == CurrentPacketLength)
                         {
+//   		            Debug.Log("KSPSerialIO: finished payload");
                             CurrentState = ReceiveStates.CS;
                         }
                         break;
                     case ReceiveStates.CS:
                         if (CompareChecksum(ReadBuffer[x]))
                         {
+//   		            Debug.Log("KSPSerialIO: checksum OK");
                             SerialMutex.WaitOne();
                             Buffer.BlockCopy(PayloadBuffer, 0, NewPacketBuffer, 0, CurrentBytesRead);
                             NewPacketFlag = true;
@@ -443,10 +466,12 @@ namespace KSPSerialIO
                                 InboundPacketHandler();
                             }
                         }
+//   		        Debug.Log("KSPSerialIO: returning to first header");
                         CurrentState = ReceiveStates.FIRSTHEADER;
                         break;
                 }
             }
+//            Debug.Log("KSPSerialIO: ReceivedDataEvent end");
         }
 
         private static Boolean CompareChecksum(byte readCS)
@@ -534,44 +559,14 @@ namespace KSPSerialIO
 
                 try
                 {
-                    //Use registry hack to get a list of serial ports until we get system.io.ports
-                    RegistryKey SerialCOMSKey = Registry.LocalMachine.OpenSubKey(@"HARDWARE\\DEVICEMAP\\SERIALCOMM\\");
-
                     Begin();
 
-                    //print("KSPSerialIO: receive threshold " + Port.ReceivedBytesThreshold.ToString());
+		    String PortName = SettingsNStuff.DefaultPort;
 
-                    String[] PortNames;
-                    if (SerialCOMSKey == null)
-                    {
-                        Debug.Log("KSPSerialIO: Dude do you even win32 serial port??");
-                        PortNames = new String[1];
-                        PortNames[0] = SettingsNStuff.DefaultPort;
-                    }
-                    else
-                    {
-                        String[] realports = SerialCOMSKey.GetValueNames();  // get list of all serial devices
-                        PortNames = new String[realports.Length + 1];   // make a new list with 1 extra, we put the default port first
-                        realports.CopyTo(PortNames, 1);
-                    }
+		    PortNumber = PortName;
+                        Debug.Log("KSPSerialIO: trying port " + PortNumber);
 
-                    Debug.Log(String.Format("KSPSerialIO: Found {0} serial ports",
-                                            PortNames.Length));
-
-                    //look through all found ports for our display
-                    for (int j=0; j < PortNames.Length; j++)
-                    {
-                        if (j == 0)  // try default port first
-                        {
-                            PortNumber = SettingsNStuff.DefaultPort;
-                            Debug.Log("KSPSerialIO: trying default port " + PortNumber);
-                        }
-                        else
-                        {
-                            PortNumber = (string)SerialCOMSKey.GetValue(PortNames[j]);
-                            Debug.Log("KSPSerialIO: trying port " + PortNames[j] + " - " + PortNumber);
-                        }
-                        Port.PortName = PortNumber;
+			Port.PortName = PortNumber;
 
                         if (!Port.IsOpen)
                         {
@@ -581,7 +576,7 @@ namespace KSPSerialIO
                             }
                             catch (Exception e)
                             {
-                                Debug.Log("Error opening serial port " + Port.PortName + ": " + e.Message);
+                                Debug.Log("KSPSerialIO: Error opening serial port " + Port.PortName + ": " + e.Message);
                             }
 
                             //secret handshake
@@ -601,29 +596,27 @@ namespace KSPSerialIO
                                     k++;
                                 }
 
-                                Port.Close();
+//                                Port.Close();
                                 if (DisplayFound)
                                 {
-                                    Debug.Log("KSPSerialIO-hp: found KSP Display at " + Port.PortName);
-                                    break;
+                                    Debug.Log("KSPSerialIO: KSPSerialIO-hp: found KSP Display at " + Port.PortName);
                                 }
                                 else
                                 {
-                                    Debug.Log("KSPSerialIO-hp: KSP Display not found");
+                                    Debug.Log("KSPSerialIO: KSPSerialIO-hp: KSP Display not found");
                                 }
                             }
                             else if (Port.IsOpen && (SettingsNStuff.HandshakeDisable == 1))
                             {
                                 DisplayFound = true;                                    
                                 Debug.Log("KSPSerialIO: Handshake disabled, using " + Port.PortName);
-                                break;
                             }
                         }
                         else
                         {
                             Debug.Log("KSPSerialIO: " + PortNumber + "is already being used.");
                         }
-                    }
+
                 }
                 catch (Exception e)
                 {
@@ -639,7 +632,10 @@ namespace KSPSerialIO
 
         private static void VesselControls()
         {
-
+            VControls.Gear = BitMathByte(CPacket.MainControls, 4);
+            ControlReceived = true;
+	if (true)		return;
+//            Debug.Log("KSPSerialIO: VesselControls() start");
             VControls.SAS = BitMathByte(CPacket.MainControls, 7);
             VControls.RCS = BitMathByte(CPacket.MainControls, 6);
             VControls.Lights = BitMathByte(CPacket.MainControls, 5);
@@ -665,8 +661,7 @@ namespace KSPSerialIO
                 VControls.ControlGroup[j] = BitMathUshort(CPacket.ControlGroup, j);
             }
 
-            ControlReceived = true;
-            //Debug.Log("KSPSerialIO: ControlPacket received");
+//            Debug.Log("KSPSerialIO: VesselControls() end");
         }
 
         private static Boolean BitMathByte(byte x, int n)
@@ -686,7 +681,7 @@ namespace KSPSerialIO
 
         private static void debug()
         {
-            Debug.Log(Port.BytesToRead.ToString() + "BTR");
+            Debug.Log("KSPSerialIO: " + Port.BytesToRead.ToString() + "BTR");
         }
 
 
@@ -719,14 +714,14 @@ namespace KSPSerialIO
         private double missionTimeOld = 0;
         private double theTime = 0;
 
-        public double refreshrate = 1.0f;
+        public double refreshrate = 5.0f;
         public static Vessel ActiveVessel = new Vessel();
 
         public Guid VesselIDOld;
 
         IOResource TempR = new IOResource();
 
-        private static Boolean wasSASOn = false;
+//        private static Boolean wasSASOn = false;
 
         private ScreenMessageStyle KSPIOScreenStyle = ScreenMessageStyle.UPPER_RIGHT;
 
@@ -740,7 +735,7 @@ namespace KSPSerialIO
         {
             if (KSPSerialPort.DisplayFound)
             {
-                if (!KSPSerialPort.Port.IsOpen)
+/*                if (!KSPSerialPort.Port.IsOpen)
                 {
                     ScreenMessages.PostScreenMessage("Starting serial port " + KSPSerialPort.Port.PortName, 10f, KSPIOScreenStyle);
 
@@ -762,13 +757,13 @@ namespace KSPSerialIO
                     if (SettingsNStuff.HandshakeDisable == 1)
                         ScreenMessages.PostScreenMessage("Handshake disabled");
                 }
-
+*/
                 Thread.Sleep(200);
 
                 ActiveVessel.OnPostAutopilotUpdate -= AxisInput;
                 ActiveVessel = FlightGlobals.ActiveVessel;
                 ActiveVessel.OnPostAutopilotUpdate += AxisInput;
-
+/*
                 //sync inputs at start
                 ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.RCS, KSPSerialPort.VControls.RCS);
                 ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.SAS, KSPSerialPort.VControls.SAS);
@@ -788,7 +783,9 @@ namespace KSPSerialIO
                 ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.Custom08, KSPSerialPort.VControls.ControlGroup[8]);
                 ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.Custom09, KSPSerialPort.VControls.ControlGroup[9]);
                 ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.Custom10, KSPSerialPort.VControls.ControlGroup[10]);
-
+*/
+                ScreenMessages.PostScreenMessage("KerbalController Start complete");
+                Debug.Log("KSPSerialIO: KerbalController Start complete");
             }
             else
             {

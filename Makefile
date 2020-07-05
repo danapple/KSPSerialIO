@@ -2,8 +2,8 @@ export PATH := /usr/local/bin:$(PATH)
 XBUILD=xbuild
 CONFIG=Release
 
-KSPDIR=/Users/hugo/Local\ Files/KSP/MyMOD/
-INSTALLDIR=$(KSPDIR)/GameData/KSPSerialIO
+KSPDIR=/home/danapple/KSP/MyMOD/
+INSTALLDIR=/home/danapple/KSP/KSP_linux/GameData/KSPSerialIO
 CONFIGDIR=$(INSTALLDIR)/PluginData/KSPSerialIO
 
 PLUGINVERSION=$(shell egrep "^\[.*AssemblyVersion" KSPSerialIO/Properties/AssemblyInfo.cs|cut -d\" -f2)
@@ -13,12 +13,14 @@ PACKAGECONFIGDIR=$(PACKAGEDIR)/PluginData/KSPSerialIO
 all: KSPSerial.dll
 
 KSPSerial.dll:
-	$(XBUILD) /p:Configuration=$(CONFIG)
+	$(XBUILD) /p:Configuration=$(CONFIG) /p:TargetFrameworkVersion="v4.5"
 
 install:
+	mkdir -p $(INSTALLDIR)
 	cp KSPSerialIO/bin/$(CONFIG)/KSPSerialIO.dll $(INSTALLDIR)
 	cp KSPSerialIO/bin/$(CONFIG)/PsimaxSerial.dll $(INSTALLDIR)
 	#cp ../PsiMaxSerial/PsiMaxSerial/Release/Mono.Posix.dll $(INSTALLDIR)
+	mkdir -p $(CONFIGDIR)
 	cp config.xml $(CONFIGDIR)
 
 clean:
