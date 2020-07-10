@@ -261,7 +261,6 @@ namespace KSPSerialIO
         private static HandShakePacket HPacket;
 
         public static VesselControls VControls = new VesselControls();
-        public static VesselControls VControlsOld = new VesselControls();
 
         private const int MaxPayloadSize = 255;
         enum ReceiveStates: byte {
@@ -284,6 +283,7 @@ namespace KSPSerialIO
         // Semaphore to indicate whether the serial worker should do work
         private static volatile bool doSerialRead = true;
         private static Thread SerialThread;
+	private static byte processedSeq = 0;
 
         private const byte HSPid = 0, VDid = 1, Cid = 101; //hard coded values for packet IDS
 
@@ -538,12 +538,11 @@ namespace KSPSerialIO
             CPacket = new ControlPacket();
 
             VControls.ControlGroup = new Boolean[11];
-            VControlsOld.ControlGroup = new Boolean[11];
         }
 
         void Awake()
         {
-            if (DisplayFound)
+            if (false && DisplayFound)
             {
                 Debug.Log("KSPSerialIO: running...");
                 Begin();
@@ -634,9 +633,18 @@ namespace KSPSerialIO
 
         private static void VesselControls()
         {
-	    Debug.Log("KSPSerialIO: Got control packet seq " + CPacket.seq);
-	    VData.ackseq = CPacket.seq;
+	    byte receivedSeq = CPacket.seq;
+	    Debug.Log("KSPSerialIO: Got control packet seq " + receivedSeq);
+	    VData.ackseq = receivedSeq;
+	    if (processedSeq == receivedSeq) {
+	    	 Debug.Log("KSPSerialIO: Dup sequence " + receivedSeq + ", skipping");
+		 return;
+	    }	
+	    processedSeq = receivedSeq;    
             VControls.Gear = BitMathByte(CPacket.MainControls, 4);
+            VControls.Stage = BitMathByte(CPacket.MainControls, 0);
+            VControls.SAS = BitMathByte(CPacket.MainControls, 7);
+            VControls.RCS = BitMathByte(CPacket.MainControls, 6);
             ControlReceived = true;
 	if (true)		return;
 //            Debug.Log("KSPSerialIO: VesselControls() start");
@@ -1037,119 +1045,54 @@ namespace KSPSerialIO
                      */
 
                     //if (FlightInputHandler.RCSLock != KSPSerialPort.VControls.RCS)
-                    if (KSPSerialPort.VControls.RCS != KSPSerialPort.VControlsOld.RCS)
-                    {
                         ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.RCS, KSPSerialPort.VControls.RCS);
-                        KSPSerialPort.VControlsOld.RCS = KSPSerialPort.VControls.RCS;
                         //ScreenMessages.PostScreenMessage("RCS: " + KSPSerialPort.VControls.RCS.ToString(), 10f, KSPIOScreenStyle);
-                    }
+
 
                     //if (ActiveVessel.ctrlState.killRot != KSPSerialPort.VControls.SAS)
-                    if (KSPSerialPort.VControls.SAS != KSPSerialPort.VControlsOld.SAS)
-                    {
                         ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.SAS, KSPSerialPort.VControls.SAS);
-                        KSPSerialPort.VControlsOld.SAS = KSPSerialPort.VControls.SAS;
                         //ScreenMessages.PostScreenMessage("SAS: " + KSPSerialPort.VControls.SAS.ToString(), 10f, KSPIOScreenStyle);
-                    }
 
-                    if (KSPSerialPort.VControls.Lights != KSPSerialPort.VControlsOld.Lights)
-                    {
                         ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.Light, KSPSerialPort.VControls.Lights);
-                        KSPSerialPort.VControlsOld.Lights = KSPSerialPort.VControls.Lights;
-                    }
 
-                    //if (KSPSerialPort.VControls.Gear != KSPSerialPort.VControlsOld.Gear)
-                    //{
                         ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.Gear, KSPSerialPort.VControls.Gear);
-                        KSPSerialPort.VControlsOld.Gear = KSPSerialPort.VControls.Gear;
-                    //}
 
-                    if (KSPSerialPort.VControls.Brakes != KSPSerialPort.VControlsOld.Brakes)
-                    {
                         ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.Brakes, KSPSerialPort.VControls.Brakes);
-                        KSPSerialPort.VControlsOld.Brakes = KSPSerialPort.VControls.Brakes;
-                    }
 
-                    if (KSPSerialPort.VControls.Abort != KSPSerialPort.VControlsOld.Abort)
-                    {
                         ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.Abort, KSPSerialPort.VControls.Abort);
-                        KSPSerialPort.VControlsOld.Abort = KSPSerialPort.VControls.Abort;
-                    }
 
-                    if (KSPSerialPort.VControls.Stage != KSPSerialPort.VControlsOld.Stage)
-                    {
-                        if (KSPSerialPort.VControls.Stage)
+			if (KSPSerialPort.VControls.Stage)
+			{
+			Debug.Log("KSPSerialIO: ActivateNextStage");
                             StageManager.ActivateNextStage();
+			}
 
                         ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.Stage, KSPSerialPort.VControls.Stage);
-                        KSPSerialPort.VControlsOld.Stage = KSPSerialPort.VControls.Stage;
-                    }
+			KSPSerialPort.VControls.Stage = false;
 
                     //================ control groups
 
-                    if (KSPSerialPort.VControls.ControlGroup[1] != KSPSerialPort.VControlsOld.ControlGroup[1])
-                    {
                         ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.Custom01, KSPSerialPort.VControls.ControlGroup[1]);
-                        KSPSerialPort.VControlsOld.ControlGroup[1] = KSPSerialPort.VControls.ControlGroup[1];
-                    }
 
-                    if (KSPSerialPort.VControls.ControlGroup[2] != KSPSerialPort.VControlsOld.ControlGroup[2])
-                    {
                         ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.Custom02, KSPSerialPort.VControls.ControlGroup[2]);
-                        KSPSerialPort.VControlsOld.ControlGroup[2] = KSPSerialPort.VControls.ControlGroup[2];
-                    }
 
-                    if (KSPSerialPort.VControls.ControlGroup[3] != KSPSerialPort.VControlsOld.ControlGroup[3])
-                    {
                         ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.Custom03, KSPSerialPort.VControls.ControlGroup[3]);
-                        KSPSerialPort.VControlsOld.ControlGroup[3] = KSPSerialPort.VControls.ControlGroup[3];
-                    }
 
-                    if (KSPSerialPort.VControls.ControlGroup[4] != KSPSerialPort.VControlsOld.ControlGroup[4])
-                    {
                         ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.Custom04, KSPSerialPort.VControls.ControlGroup[4]);
-                        KSPSerialPort.VControlsOld.ControlGroup[4] = KSPSerialPort.VControls.ControlGroup[4];
-                    }
 
-                    if (KSPSerialPort.VControls.ControlGroup[5] != KSPSerialPort.VControlsOld.ControlGroup[5])
-                    {
                         ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.Custom05, KSPSerialPort.VControls.ControlGroup[5]);
-                        KSPSerialPort.VControlsOld.ControlGroup[5] = KSPSerialPort.VControls.ControlGroup[5];
-                    }
 
-                    if (KSPSerialPort.VControls.ControlGroup[6] != KSPSerialPort.VControlsOld.ControlGroup[6])
-                    {
                         ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.Custom06, KSPSerialPort.VControls.ControlGroup[6]);
-                        KSPSerialPort.VControlsOld.ControlGroup[6] = KSPSerialPort.VControls.ControlGroup[6];
-                    }
 
-                    if (KSPSerialPort.VControls.ControlGroup[7] != KSPSerialPort.VControlsOld.ControlGroup[7])
-                    {
                         ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.Custom07, KSPSerialPort.VControls.ControlGroup[7]);
-                        KSPSerialPort.VControlsOld.ControlGroup[7] = KSPSerialPort.VControls.ControlGroup[7];
-                    }
 
-                    if (KSPSerialPort.VControls.ControlGroup[8] != KSPSerialPort.VControlsOld.ControlGroup[8])
-                    {
                         ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.Custom08, KSPSerialPort.VControls.ControlGroup[8]);
-                        KSPSerialPort.VControlsOld.ControlGroup[8] = KSPSerialPort.VControls.ControlGroup[8];
-                    }
 
-                    if (KSPSerialPort.VControls.ControlGroup[9] != KSPSerialPort.VControlsOld.ControlGroup[9])
-                    {
                         ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.Custom09, KSPSerialPort.VControls.ControlGroup[9]);
-                        KSPSerialPort.VControlsOld.ControlGroup[9] = KSPSerialPort.VControls.ControlGroup[9];
-                    }
 
-                    if (KSPSerialPort.VControls.ControlGroup[10] != KSPSerialPort.VControlsOld.ControlGroup[10])
-                    {
                         ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.Custom10, KSPSerialPort.VControls.ControlGroup[10]);
-                        KSPSerialPort.VControlsOld.ControlGroup[10] = KSPSerialPort.VControls.ControlGroup[10];
-                    }
 
                     //Set sas mode
-                    if (KSPSerialPort.VControls.SASMode != KSPSerialPort.VControlsOld.SASMode)
-                    {
                         if (KSPSerialPort.VControls.SASMode != 0 && KSPSerialPort.VControls.SASMode < 11)
                         {
                             if (!ActiveVessel.Autopilot.CanSetMode((VesselAutopilot.AutopilotMode)(KSPSerialPort.VControls.SASMode - 1)))
@@ -1161,18 +1104,12 @@ namespace KSPSerialIO
                                 ActiveVessel.Autopilot.SetMode((VesselAutopilot.AutopilotMode)KSPSerialPort.VControls.SASMode - 1);
                             }
                         }
-                        KSPSerialPort.VControlsOld.SASMode = KSPSerialPort.VControls.SASMode;
-                    }
 
                     //set navball mode
-                    if (KSPSerialPort.VControls.SpeedMode != KSPSerialPort.VControlsOld.SpeedMode)
-                    {
                         if (!((KSPSerialPort.VControls.SpeedMode == 0) || ((KSPSerialPort.VControls.SpeedMode == 3) && !TargetExists())))
                         {
                             FlightGlobals.SetSpeedMode((FlightGlobals.SpeedDisplayModes)(KSPSerialPort.VControls.SpeedMode - 1));
                         }
-                        KSPSerialPort.VControlsOld.SpeedMode = KSPSerialPort.VControls.SpeedMode;
-                    }
 
 
                     // temporarily disengage SAS while steering
