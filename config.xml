@@ -2,7 +2,7 @@
 <config>
   <double name="refresh">.2</double>
   <string name="DefaultPort">/dev/serial/by-id/usb-Arduino__www.arduino.cc__0042_95730333737351015012-if00</string>
-  <int name="BaudRate">38400</int>
+  <int name="BaudRate">115200</int>
   <int name="HandshakeDelay">2500</int>
   <int name="HandshakeDisable">0</int>
   <int name="ThrottleEnable">2</int>
